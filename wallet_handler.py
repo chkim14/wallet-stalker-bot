@@ -5,7 +5,7 @@ from replit import db
 from bs4 import BeautifulSoup
 
 # minimum amount (in usd) to trigger update
-SIG_CHANGE = 5
+SIG_CHANGE = 5000
 
 def get_wallet_holdings(wallet_num):
   headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 6.1; WOW64; rv:50.0) Firefox/50.0'}
@@ -22,7 +22,7 @@ def get_wallet_holdings(wallet_num):
       coin_name = token[1].text
       units = token[2].text.replace(',','')
       # added new dicttionary value to track usd value of coin
-      usd_val = token[3].text[1:].split(' ')[0]
+      usd_val = token[3].text[1:].replace(',','').split(' ')[0]
       holdings_dict.update({coin_name:[units, usd_val]})
 
   return holdings_dict
@@ -48,11 +48,11 @@ def detect_wallet_changes(wallet_num,curr_holdings):
         # store both diff in units and diff and usd
         diff_units = float(curr_holdings[key][0]) - float(stored_holdings[key][0])
         diff_usd = diff_units * float(curr_holdings[key][1])
-        holding_diff = [diff_units, diff_usd] #float(curr_holdings[key]) - float(stored_holdings[key])
+        holding_diff = [diff_units, diff_usd]
         wallet_diffs.update({key:holding_diff})
       # wallet owner liquidated all of this coin
       elif key not in curr_holdings:
-        print("liquidate coin")
+        print("liquidate coin: ", key, " ", stored_holdings[key][0])
         print(-float(stored_holdings[key][0]))
         # store both diff in units and diff and usd
         diff_units = -float(stored_holdings[key][0])
@@ -64,7 +64,7 @@ def detect_wallet_changes(wallet_num,curr_holdings):
   for key in curr_holdings:
     # wallet owner added new coin
     if key not in stored_holdings:
-        print("new coin")
+        print("new coin: ", key, " ", stored_holdings[key][0])
         # store both diff in units and diff and usd
         diff_units = float(curr_holdings[key][0])
         diff_usd = float(curr_holdings[key][0]) * float(curr_holdings[key][1])
@@ -90,14 +90,14 @@ async def scan_wallets(client):
           # difference in native units 
           diff_units = "{:.5f}".format(abs(wallet_diffs[key][0]))
           # difference in usd value
-          diff_usd = "{:.5f}".format(abs(wallet_diffs[key][1]))
+          diff_usd = "{:.2f}".format(abs(wallet_diffs[key][1]))
           if wallet_diffs[key][1] > SIG_CHANGE: 
             print("sending message")
-            out_msg = '{}    :arrow_up: {}#{}, {}#USD'.format(id,diff_units,key,diff_usd)
+            out_msg = '{}    :arrow_up: {}#{}, {}$USD'.format(id,diff_units,key,diff_usd)
             await channel.send(out_msg)
           elif wallet_diffs[key][1] < -SIG_CHANGE: 
             print("sending message")
-            out_msg = '{}    :arrow_down: {}#{}, {}#USD'.format(id,diff_units,key,diff_usd)
+            out_msg = '{}    :arrow_down: {}#{}, {}$USD'.format(id,diff_units,key,diff_usd)
             await channel.send(out_msg)
           else:
             # debug, remove line if works
