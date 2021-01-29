@@ -1,4 +1,5 @@
 import os
+import logging 
 import discord
 import asyncio
 import requests
@@ -6,11 +7,17 @@ from replit import db
 from bs4 import BeautifulSoup
 from set_ops import union,intersection,difference
 
+import time
+
 # minimum amount (in usd) to trigger update
 SIG_CHANGE = 5000
 
 def update_db(wallet_num,holdings_dict): 
   db[wallet_num] = holdings_dict
+
+def get_wallet_nums(): 
+  with open('wallets.txt') as f:
+      return f.read().splitlines()
 
 def wallet_exists(wallet_num): 
   if wallet_num in db: 
@@ -40,7 +47,7 @@ def get_wallet_holdings(wallet_num):
     token = trgt_html.findAll('td', class_=None)
     if len(token) > 1:
       coin_name = token[1].text
-      units = token[2].text.replace(',','')
+      units = token[2].text.replace(',','').replace('...','')
 
       # added new dicttionary value to track usd value of coin
       usd_val = token[3].text[1:].replace(',','').split(' ')[0]
@@ -64,13 +71,13 @@ def detect_wallet_changes(wallet_num,curr_holdings):
   for key in holding_union: 
     if key in holding_intersect: 
       unit_diff,usd_diff = calc_token_diff(stored_holdings[key][0],curr_holdings[key][0],curr_holdings[key][1])
-      change_stat = ':arrow_up: ADDED :arrow_up: ' if unit_diff > 0 else ':arrow_down: REMOVED :arrow_down: ' 
+      change_stat = ':white_check_mark: ADDED' if unit_diff > 0 else ':no_entry_sign: REMOVED' 
     elif key in holding_dump: 
       unit_diff,usd_diff = calc_token_diff(stored_holdings[key][0],0,stored_holdings[key][1])
-      change_stat = ':wastebasket: DUMPED :wastebasket:'
+      change_stat = ':wastebasket: DUMPED'
     else: 
       unit_diff,usd_diff = calc_token_diff(curr_holdings[key][0],0,curr_holdings[key][1])
-      change_stat = ':star: NEW BAG :star: ' 
+      change_stat = ':star: NEW BAG' 
 
     holding_diff = [unit_diff,usd_diff,change_stat]
     wallet_diffs.update({key:holding_diff})
@@ -82,37 +89,44 @@ async def scan_wallets(client):
   channel = client.get_channel(int(os.getenv('CHANNEL')))
 
   while True:
-    with open('wallets.txt') as f:
-      ids = f.read().splitlines()
-    for id in ids:
-      # create message to send to discord with id as author
+    start_time = time.time()
+
+    wallet_nums = get_wallet_nums()
+
+    for wallet_num in wallet_nums:
+      # create message to send to discord with wallet_num as author
       embed = discord.Embed()
-      wallet_author = os.getenv('AUTHOR_URL') + id
-      embed.set_author(name=id, url=wallet_author)
+      wallet_author = os.getenv('AUTHOR_URL') + wallet_num
+      embed.set_author(name=wallet_num, url=wallet_author)
 
       num_changes = 0
-      holdings_dict = get_wallet_holdings(id)
+      holdings_dict = get_wallet_holdings(wallet_num)
 
-      if wallet_exists(id): 
-        wallet_diffs = detect_wallet_changes(id,holdings_dict)
+      if wallet_exists(wallet_num): 
+        wallet_diffs = detect_wallet_changes(wallet_num,holdings_dict)
 
-        for key in wallet_diffs:
+        for key in sorted(wallet_diffs.keys()):
           # difference in native units 
-          diff_units = "{:.5f}".format(abs(wallet_diffs[key][0]))
+          diff_units = float(abs(wallet_diffs[key][0]))
 
           # difference in usd value
-          diff_usd = "{:.2f}".format(abs(wallet_diffs[key][1]))
+          diff_usd = float(abs(wallet_diffs[key][1]))
 
           # overall effect of the transactions to currency
           change_stat = wallet_diffs[key][2]
 
           if float(diff_usd) > SIG_CHANGE:
-            value_field = diff_units + " " + key + " ($" + diff_usd + ")" 
+            # format commas, 2 floating points
+            diff_units = f"{diff_units:,.2f}"
+            diff_usd = f"{diff_usd:,.2f}"
+
+            value_field = key + " " + diff_units + " " + " ($" + diff_usd + ")" 
             embed.add_field(name=change_stat, value=value_field,inline=False)
             num_changes += 1
         
         if num_changes > 0:
           await channel.send(embed=embed) 
 
-      update_db(id,holdings_dict)
+      update_db(wallet_num,holdings_dict)
+    print('total runtime: ' + str(time.time() - start_time))
     await asyncio.sleep(300)

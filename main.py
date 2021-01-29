@@ -1,7 +1,7 @@
 from replit import db
 import discord 
 import os 
-from wallet_handler import scan_wallets
+from wallet_handler import scan_wallets,get_wallet_nums
 from keep_alive import keep_alive
 
 client = discord.Client()
@@ -16,14 +16,24 @@ async def on_message(message):
     return 
 
   if message.content.startswith('!add'): 
-    f = open("wallets.txt", "a")
-    f.write(message.content.split('!add ')[1] + '\n')
-    f.close()
-    await message.channel.send('Wallet id added to database!')
+    if len(message.content.split('!add ')) > 1:
+      new_wallet_num = message.content.split('!add ')[1]
+
+      wallet_nums = get_wallet_nums()
+      if new_wallet_num in wallet_nums: 
+        await message.channel.send('Wallet id already exists!')
+      else: 
+        f = open("wallets.txt", "a")
+        f.write(new_wallet_num + '\n')
+        f.close()
+        await message.channel.send('Wallet id added to database!')
+    
+    else: 
+      await message.channel.send('Please add wallet id!')
   
   if message.content.startswith('!list'): 
     if len(message.content.split('!list ')) > 1: 
-      ret_num = message.content.split('!list ')[1]
+      ret_num = int(message.content.split('!list ')[1])
     else: 
       ret_num = 5
 
